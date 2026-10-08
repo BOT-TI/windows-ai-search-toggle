@@ -5,7 +5,7 @@ function Assert-True([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
     $script:count++
 }
-Get-ChildItem -LiteralPath $root -Recurse -Include *.ps1,*.psm1 | ForEach-Object {
+Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object { $_.Extension -in @('.ps1','.psm1') } | ForEach-Object {
     $tokens = $null; $errors = $null
     [Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
     Assert-True ($errors.Count -eq 0) ("Parse errors in $($_.Name): $errors")
