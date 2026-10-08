@@ -72,7 +72,7 @@ try {
     Assert-True (-not (Test-Path -LiteralPath $tempRoot)) 'WhatIf created backup files.'
 } finally {
     $env:ProgramData = $savedProgramData
-    foreach ($name in @('Get-ItemProperty','Get-Service','Get-Item','Set-Service','Stop-Service')) { Remove-Item "Function:\global:$name" -ErrorAction SilentlyContinue }
+    foreach ($name in @('Get-ItemProperty','Get-Service','Get-Item','Set-Service','Stop-Service')) { Remove-Item "Function:\$name" -Force -ErrorAction Stop }
 }
 
 # Verify actual backup file serialization and permissions in a temporary folder.
