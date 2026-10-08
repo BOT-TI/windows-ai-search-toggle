@@ -1,0 +1,15 @@
+name: PowerShell checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Windows PowerShell 5.1 syntax and backup/restore checks
+        shell: powershell
+        run: ./tests/Verify.ps1
+      - name: PowerShell 7 syntax and backup/restore checks
+        shell: pwsh
+        run: ./tests/Verify.ps1

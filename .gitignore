@@ -1,0 +1,5 @@
+original.json
+ai-service.json
+*.tmp
+*.log
+TestResults/
