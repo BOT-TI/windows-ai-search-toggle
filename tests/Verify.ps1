@@ -39,4 +39,51 @@ try {
     try { Assert-PolicyBackup $invalid } catch { $rejected = $true }
     Assert-True $rejected 'Cross-key backup injection must be rejected.'
 } finally { Remove-Item -LiteralPath $path -Recurse -Force }
-Write-Host "$count checks passed; only a disposable HKCU test key was modified."
+
+# Exercise the public script's dry-run path with simulated Windows 11/service
+# observations. Any service mutation immediately fails the test.
+$savedProgramData = $env:ProgramData
+$tempRoot = Join-Path $env:TEMP ('WindowsSearchToggle-' + [guid]::NewGuid().ToString('N'))
+try {
+    $env:ProgramData = $tempRoot
+    function global:Get-ItemProperty {
+        param([string]$Path)
+        if ($Path -eq 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion') {
+            return [pscustomobject]@{ CurrentBuildNumber='26100'; InstallationType='Client'; EditionID='Professional' }
+        }
+        throw "Unexpected registry read in dry run: $Path"
+    }
+    function global:Get-Service {
+        param([string]$Name)
+        if ($Name -ne 'WSAIFabricSvc') { throw 'Unexpected service read.' }
+        [pscustomobject]@{ Name=$Name; Status='Running' }
+    }
+    function global:Get-Item {
+        param([string]$LiteralPath)
+        if ($LiteralPath -ne 'HKLM:\SYSTEM\CurrentControlSet\Services\WSAIFabricSvc') { throw 'Unexpected registry read.' }
+        $fake = New-Object PSObject
+        $fake | Add-Member ScriptMethod GetValue { param($Name,$Default) if ($Name -eq 'Start') { 3 } else { 0 } }
+        $fake | Add-Member ScriptMethod GetValueNames { @('Start') }
+        $fake
+    }
+    function global:Set-Service { throw 'WhatIf attempted a service startup mutation.' }
+    function global:Stop-Service { throw 'WhatIf attempted to stop a service.' }
+    & (Join-Path $root 'Disable-Windows-AI-Search.ps1') -DisableAIFabric -WhatIf
+    Assert-True (-not (Test-Path -LiteralPath $tempRoot)) 'WhatIf created backup files.'
+} finally {
+    $env:ProgramData = $savedProgramData
+    foreach ($name in @('Get-ItemProperty','Get-Service','Get-Item','Set-Service','Stop-Service')) { Remove-Item "Function:\global:$name" -ErrorAction SilentlyContinue }
+}
+
+# Verify actual backup file serialization and permissions in a temporary folder.
+try {
+    $file = Join-Path $tempRoot 'backup.json'
+    Save-ProtectedJson -Path $file -Data @{ Version=1; Values=@($existing,$absent) }
+    $readback = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+    Assert-True ($readback.Values.Count -eq 2 -and $readback.Values[0].Value -eq 7) 'Backup JSON did not preserve original state.'
+    $acl = Get-Acl -LiteralPath $tempRoot
+    Assert-True $acl.AreAccessRulesProtected 'Backup directory inherited untrusted permissions.'
+} finally {
+    if (Test-Path -LiteralPath $tempRoot) { Remove-Item -LiteralPath $tempRoot -Recurse -Force }
+}
+Write-Host "$count checks passed; real Search policies and AI services were not modified."
